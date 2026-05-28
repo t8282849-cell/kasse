@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tobias Kassen-System</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .app-container { width: 100%; max-width: 450px; background: white; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: #cc071e; color: white; padding: 15px; text-align: center; font-size: 20px; font-weight: bold; } /* Rot für REWE-Look */
+        
+        #scanner-section { position: relative; width: 100%; background: #000; min-height: 250px; }
+        #reader { width: 100%; }
+
+        .overlay {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 80%; height: 100px; border: 3px solid #00ff00; border-radius: 10px;
+            pointer-events: none; z-index: 10; box-shadow: 0 0 15px rgba(0, 255, 0, 0.3);
+            transition: border-color 0.3s;
+        }
+        .overlay.locked { border-color: #ffcc00; box-shadow: 0 0 15px rgba(255, 204, 0, 0.5); }
+        .laser {
+            position: absolute; top: 50%; left: 5%; width: 90%; height: 2px;
+            background-color: #ff0000; box-shadow: 0 0 10px #ff0000;
+            animation: scanning 2s infinite ease-in-out;
+        }
+        @keyframes scanning { 0%, 100% { top: 20%; } 50% { top: 80%; } }
+
+        .content { padding: 20px; }
+        .item-list { margin-bottom: 15px; max-height: 200px; overflow-y: auto; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .total-area { font-size: 28px; font-weight: bold; text-align: right; color: #28a745; margin-bottom: 15px; }
+        
+        button { width: 100%; padding: 15px; border: none; border-radius: 10px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .btn-pay { background: #28a745; color: white; border-bottom: 4px solid #1e7e34; }
+        .btn-start { background: #007bff; color: white; }
+        .btn-admin { background: #6c757d; color: white; font-size: 14px; }
+        .btn-link { background: none; color: #007bff; padding: 5px; font-size: 14px; text-decoration: underline; margin-top: 10px; }
+        .btn-logout { background: #dc3545; color: white; font-size: 12px; padding: 8px; margin-top: 20px; }
+        
+        .hidden { display: none !important; }
+        .cart-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f9f9f9; }
+        .btn-delete { background: #ff4d4d; color: white; border: none; border-radius: 50%; width: 25px; height: 25px; cursor: pointer; }
+        
+        input, select { width: 94%; padding: 12px; margin: 5px 0; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; }
+        
+        .auth-box { text-align: center; }
+        .auth-box h3 { margin-top: 0; color: #333; }
+        .user-greeting { font-size: 14px; text-align: center; color: #555; margin-bottom: 15px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <div class="header">Tobias Kassen-System</div>
+
+    <div id="view-login" class="content auth-box">
+        <h3>Mitarbeiter Login</h3>
+        <input type="text" id="login-user" placeholder="Vorname">
+        <input type="password" id="login-pass" placeholder="Passwort">
+        <button class="btn-start" onclick="login()">Einloggen</button>
+        <button class="btn-link" onclick="showRegister()">Noch kein Mitarbeiter? Registrieren</button>
+    </div>
+
+    <div id="view-register" class="content auth-box hidden">
+        <h3>Als Mitarbeiter Registrieren</h3>
+        <input type="text" id="reg-vorname" placeholder="Vorname">
+        <input type="text" id="reg-nachname" placeholder="Nachname">
+        <input type="password" id="reg-pass" placeholder="Neues Passwort">
+        <button class="btn-pay" onclick="register()">Registrieren & Ausweis drucken</button>
+        <button class="btn-link" onclick="showLogin()">Zurück zum Login</button>
+    </div>
+    
+    <div id="app-core" class="hidden">
+        <div id="scanner-section">
+            <div id="reader"></div>
+            <div class="overlay" id="scan-frame"><div class="laser"></div></div>
+        </div>
+
+        <div id="view-main" class="content">
+            <div class="user-greeting" id="greeting-text"></div>
+            <button class="btn-start" id="start-btn" onclick="startCam()">Scanner Aktivieren</button>
+            
+            <div class="item-list" id="cart">
+                <p style="color: #888; text-align: center;">Warenkorb leer</p>
+            </div>
+            
+            <div class="total-area">Summe: <span id="total-price">0.00</span> €</div>
+            <button class="btn-pay" onclick="checkout()">KASSIEREN / BON</button>
+            
+            <div style="display: flex; gap: 10px;">
+                <button class="btn-admin" onclick="goAdmin()">Produkte verwalten</button>
+                <button class="btn-logout" onclick="logout()">Abmelden</button>
+            </div>
+        </div>
+
+        <div id="view-admin" class="content hidden">
+            <h3 style="margin-top:0;">Produkt hinzufügen</h3>
+            <input type="text" id="adm-barcode" placeholder="Barcode scannen...">
+            <input type="text" id="adm-name" placeholder="Produktname">
+            <input type="number" id="adm-price" placeholder="Preis (z.B. 1.99)" step="0.01">
+            <label style="font-size: 12px; font-weight: bold; color: #555;">Steuersatz:</label>
+            <select id="adm-tax">
+                <option value="A">A (19% z.B. Getränke/Snacks)</option>
+                <option value="B">B (7% z.B. Grundnahrungsmittel)</option>
+            </select>
+            <button style="background: #28a745; color: white; margin-top: 15px;" onclick="saveProduct()">Produkt Speichern</button>
+            <button class="btn-admin" onclick="goMain()">Zurück zur Kasse</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- DATENBANKEN ---
+    let db = JSON.parse(localStorage.getItem('kasse_db')) || {};
+    let users = JSON.parse(localStorage.getItem('kasse_users')) || {};
+    let currentUser = null;
+    let cart = [];
+    let scanner;
+    let isLocked = false;
+
+    // --- LOGIN SYSTEM ---
+    function showLogin() {
+        document.getElementById('view-register').classList.add('hidden');
+        document.getElementById('view-login').classList.remove('hidden');
+    }
+
+    function showRegister() {
+        document.getElementById('view-login').classList.add('hidden');
+        document.getElementById('view-register').classList.remove('hidden');
+    }
+
+    function register() {
+        const v = document.getElementById('reg-vorname').value.trim();
+        const n = document.getElementById('reg-nachname').value.trim();
+        const p = document.getElementById('reg-pass').value.trim();
+
+        if(!v || !n || !p) {
+            alert("Bitte alle Felder ausfüllen!");
+            return;
+        }
+
+        if(users[v.toLowerCase()]) {
+            alert("Dieser Vorname ist schon registriert!");
+            return;
+        }
+
+        // Benutzer speichern
+        users[v.toLowerCase()] = { vorname: v, nachname: n, passwort: p };
+        localStorage.setItem('kasse_users', JSON.stringify(users));
+
+        // Ausweis generieren
+        const heute = new Date().toLocaleDateString('de-DE');
+        let ausweis = "========================================\n";
+        ausweis += "           REWE MITARBEITER ID          \n";
+        ausweis += "========================================\n\n";
+        ausweis += "Vorname:  " + v + "\n";
+        ausweis += "Nachname: " + n + "\n";
+        ausweis += "Datum:    " + heute + "\n\n";
+        ausweis += "----------------------------------------\n";
+        ausweis += "  Willkommen zu Tobias Kassen-System!   \n";
+        ausweis += "========================================\n";
+
+        const blob = new Blob([ausweis], { type: "text/plain;charset=utf-8" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "REWE_Ausweis_" + v + ".txt";
+        link.click();
+
+        alert("Registrierung erfolgreich! Ausweis wurde heruntergeladen.");
+        showLogin();
+    }
+
+    function login() {
+        const v = document.getElementById('login-user').value.trim().toLowerCase();
+        const p = document.getElementById('login-pass').value.trim();
+
+        if(users[v] && users[v].passwort === p) {
+            currentUser = users[v];
+            startSession();
+        } else {
+            alert("Falscher Vorname oder Passwort!");
+        }
+    }
+
+    function logout() {
+        if(scanner) scanner.stop().catch(()=>{});
+        currentUser = null;
+        document.getElementById('app-core').classList.add('hidden');
+        document.getElementById('view-login').classList.remove('hidden');
+        document.getElementById('start-btn').classList.remove('hidden');
+        document.getElementById('login-user').value = "";
+        document.getElementById('login-pass').value = "";
+    }
+
+    function startSession() {
+        document.getElementById('view-login').classList.add('hidden');
+        document.getElementById('app-core').classList.remove('hidden');
+        document.getElementById('greeting-text').innerText = "Kassierer/in: " + currentUser.vorname + " " + currentUser.nachname;
+    }
+
+    // --- KASSEN SYSTEM (Scanner, Warenkorb, Checkout) ---
+    async function startCam() {
+        document.getElementById('start-btn').classList.add('hidden');
+        if (scanner) { await scanner.clear(); }
+        scanner = new Html5Qrcode("reader");
+        scanner.start({ facingMode: "environment" }, { fps: 15, qrbox: { width: 300, height: 120 } }, (text) => { handleScan(text); })
+        .catch(err => { alert("Kamera-Zugriff blockiert."); });
+    }
+
+    function handleScan(barcode) {
+        if (isLocked) return;
+        isLocked = true;
+        const frame = document.getElementById('scan-frame');
+        frame.classList.add('locked');
+
+        const isAdminMode = !document.getElementById('view-admin').classList.contains('hidden');
+        
+        if (isAdminMode) {
+            document.getElementById('adm-barcode').value = barcode;
+            if (db[barcode]) {
+                document.getElementById('adm-name').value = db[barcode].name;
+                document.getElementById('adm-price').value = db[barcode].price;
+                document.getElementById('adm-tax').value = db[barcode].tax || "A";
+            }
+        } else {
+            if (db[barcode]) {
+                cart.push({...db[barcode], id: Date.now()});
+                updateUI();
+            } else {
+                alert("Produkt unbekannt: " + barcode);
+            }
+        }
+        setTimeout(() => { isLocked = false; frame.classList.remove('locked'); }, 2000);
+    }
+
+    function removeItem(id) {
+        cart = cart.filter(item => item.id !== id);
+        updateUI();
+    }
+
+    function updateUI() {
+        const list = document.getElementById('cart');
+        if(cart.length === 0) {
+            list.innerHTML = '<p style="color: #888; text-align: center;">Warenkorb leer</p>';
+        } else {
+            list.innerHTML = cart.map(item => `
+                <div class="cart-row">
+                    <div style="flex-grow:1; display:flex; justify-content:space-between; margin-right:10px;">
+                        <span>${item.name}</span>
+                        <b>${parseFloat(item.price).toFixed(2)} € (${item.tax || 'A'})</b>
+                    </div>
+                    <button class="btn-delete" onclick="removeItem(${item.id})">X</button>
+                </div>`).join('');
+        }
+        document.getElementById('total-price').innerText = cart.reduce((sum, item) => sum + parseFloat(item.price), 0).toFixed(2);
+    }
+
+    function saveProduct() {
+        const b = document.getElementById('adm-barcode').value.trim();
+        const n = document.getElementById('adm-name').value.trim().toUpperCase();
+        const p = document.getElementById('adm-price').value;
+        const t = document.getElementById('adm-tax').value;
+        if(b && n && p) {
+            db[b] = { name: n, price: p, tax: t };
+            localStorage.setItem('kasse_db', JSON.stringify(db));
+            alert("Produkt gespeichert!");
+            document.getElementById('adm-barcode').value = ""; document.getElementById('adm-name').value = ""; document.getElementById('adm-price').value = "";
+        }
+    }
+
+    function checkout() {
+        if (cart.length === 0) return;
+        let gegGeld = prompt("Gegebenes Geld in € (z.B. 20.00):", "20.00");
+        if (gegGeld === null) return;
+        gegGeld = parseFloat(gegGeld) || 0;
+
+        const jetzt = new Date();
+        const datumString = jetzt.toLocaleDateString('de-DE');
+        const uhrzeitString = jetzt.toLocaleTimeString('de-DE', {hour: '2-digit', minute:'2-digit'});
+        const total = cart.reduce((sum, item) => sum + parseFloat(item.price), 0);
+        const rueckgeld = gegGeld - total;
+
+        let bruttoA = 0, bruttoB = 0;
+        cart.forEach(item => { let prc = parseFloat(item.price); if((item.tax || "A") === "A") bruttoA += prc; else bruttoB += prc; });
+        let nettoA = bruttoA / 1.19, steuerA = bruttoA - nettoA;
+        let nettoB = bruttoB / 1.07, steuerB = bruttoB - nettoB;
+
+        let bon = "        REWE Markt GmbH-ZwNL Ost       \n          Neue Grottkauer Str. 9        \n          12619 Berlin/Kaulsdorf        \n\n          UID Nr.: DE812706034          \n\n                                     EUR\n";
+        cart.forEach(item => {
+            let name = item.name.substring(0, 24);
+            let preis = parseFloat(item.price).toFixed(2);
+            let steuerKennung = (item.tax || "A") + (item.name.includes("PFAND") ? " *" : "");
+            let lz = 38 - name.length - preis.length; if(lz < 1) lz = 1;
+            bon += name + " ".repeat(lz) + preis + " " + steuerKennung + "\n";
+        });
+
+        bon += "----------------------------------------\nSUMME" + " ".repeat(30 - total.toFixed(2).length) + "EUR" + " ".repeat(5) + total.toFixed(2) + "\n----------------------------------------\n";
+        bon += "Geg. Geldgeräte" + " ".repeat(20 - gegGeld.toFixed(2).length) + "EUR" + " ".repeat(5) + gegGeld.toFixed(2) + "\n";
+        bon += "Rückgeld Geldgeräte" + " ".repeat(16 - rueckgeld.toFixed(2).length) + "EUR" + " ".repeat(5) + rueckgeld.toFixed(2) + "\n\n";
+        bon += "Steuer %      Netto      Steuer     Brutto\n";
+        if(bruttoA > 0) bon += `A= 19,0%` + " ".repeat(6) + nettoA.toFixed(2).padStart(6) + steuerA.toFixed(2).padStart(12) + bruttoA.toFixed(2).padStart(11) + "\n";
+        if(bruttoB > 0) bon += `B=  7,0%` + " ".repeat(6) + nettoB.toFixed(2).padStart(6) + steuerB.toFixed(2).padStart(12) + bruttoB.toFixed(2).padStart(11) + "\n";
+        bon += "Gesamtbetrag" + " ".repeat(3) + (nettoA+nettoB).toFixed(2).padStart(6) + (steuerA+steuerB).toFixed(2).padStart(12) + total.toFixed(2).padStart(11) + "\n\n";
+
+        bon += "TSE-Signatur:     IOSXerMiD4bHoJBT...\nTSE-Transaktion:  71898\n" + datumString + "      " + uhrzeitString + "     Bon-Nr.:9308\nMarkt:0137        Kasse:3      Bed.:432103\n";
+        bon += "========================================\n       Noch kein REWE Bonus-Kunde?      \n       Jetzt in der App anmelden        \n       und Bonus-Guthaben sammeln!      \n========================================\n             REWE Markt GmbH            \n";
+
+        const blob = new Blob([bon], { type: "text/plain;charset=utf-8" });
+        const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "Kassenbon.txt"; link.click();
+        cart = []; updateUI();
+    }
+
+    function goAdmin() {
+        document.getElementById('view-main').classList.add('hidden');
+        document.getElementById('view-admin').classList.remove('hidden');
+    }
+
+    function goMain() {
+        document.getElementById('view-admin').classList.add('hidden');
+        document.getElementById('view-main').classList.remove('hidden');
+    }
+</script>
+
+</body>
+</html>
